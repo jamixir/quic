@@ -110,19 +110,26 @@ parse_verify_options(ErlNifEnv *env,
       *is_verify = verify;
     }
 
+// always indicate that we received a certificate
+  CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
+
+
+  if (is_server)
+    {
+      // require client certificate always => this means both side are required to send a certificate
+      CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION;
+      
+    } 
+
   if (!verify)
     {
+      // verify :none or :verify_none => no certificate validation
       CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
     }
   else
     {
       // Verify peer is enabled
-      if (is_server)
-        {
-          CredConfig->Flags
-              |= QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION;
-        }
-      else
+      if (!is_server)
         {
           ERL_NIF_TERM tmp;
           if (enif_get_map_value(env, options, ATOM_CACERTFILE, &tmp))

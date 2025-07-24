@@ -313,6 +313,54 @@ tc_conn_timeout(Config) ->
         ct:fail("timeout")
     end.
 
+tc_conn_both_certs_success(Config) ->
+    Port = select_port(),
+    Owner = self(),
+
+    %% Start server with handshake tracking
+    {SPid, Ref} = spawn_monitor(
+        fun() ->
+            simple_handshake_server(Owner, Config, Port)
+        end
+    ),
+    receive
+        listener_ready -> ok
+    end,
+
+    %% Client connects with a certificate
+    {ok, Conn} = quicer:connect(
+        "localhost",
+        Port,
+        default_conn_opts_verify_none(Config),
+        5000
+    ),
+
+
+
+    %% Confirm server certificate is received
+    {ok, ServerCert} = quicer:peercert(Conn),
+    ?assert(is_binary(ServerCert)),
+    ct:log("Client received server certificate (length: ~p)", [byte_size(ServerCert)]),
+
+    %% Request server to send client cert back
+    SPid ! {peercert, self()},
+    receive
+        {peercert, {ok, PeerCert}} ->
+            ?assert(is_binary(PeerCert)),
+            ct:log("Server received client certificate (length: ~p)", [byte_size(PeerCert)]);
+        {peercert, {error, Reason}} ->
+            ct:fail("Server could not get client certificate: ~p", [Reason])
+    after 3000 ->
+        ct:fail("Server did not respond with client certificate")
+    end,
+
+    %% Clean up
+    quicer:close_connection(Conn),
+    SPid ! done,
+    ensure_server_exit_normal(Ref),
+    ok.
+
+
 tc_async_conn_timeout(Config) ->
     Port = select_port(),
     Owner = self(),
@@ -1079,6 +1127,34 @@ simple_conn_server_client_cert_loop(L, Conn, Owner) ->
             quicer:close_listener(L)
     end.
 
+simple_handshake_server(Owner, Config, Port) ->
+    {ok, L} = quicer:listen(Port, default_listen_opts(Config)),
+    Owner ! listener_ready,
+    {ok, Conn} = quicer:accept(L, [], 5000),
+    ok = quicer:async_handshake(Conn),
+
+    receive
+        {quic, connected, Conn, _} ->
+            ct:log("Server: handshake completed: ~p", [Conn])
+    after 5000 ->
+        ct:fail("Handshake did not complete")
+    end,
+
+    %% Handle peercert fetch
+    receive_loop(Conn, L).
+
+receive_loop(Conn, L) ->
+    receive
+        {peercert, From} ->
+            Result = quicer:peercert(Conn),
+            From ! {peercert, Result},
+            receive_loop(Conn, L);
+        done ->
+            quicer:close_connection(Conn),
+            quicer:close_listener(L),
+            ok
+    end.
+
 simple_conn_server_client_bad_cert(Owner, Config, Port) ->
     {ok, L} = quicer:listen(Port, default_listen_opts_client_cert(Config)),
     Owner ! listener_ready,
@@ -1117,6 +1193,15 @@ simple_slow_conn_server(Owner, Config, Port, HandshakeDelay) ->
             quicer:close_listener(L),
             ok
     end.
+
+default_conn_opts_verify_none(Config) ->
+    DataDir = ?config(data_dir, Config),
+    [
+        {verify, verify_none},
+        {keyfile, filename:join(DataDir, "client.key")},
+        {certfile, filename:join(DataDir, "client.pem")}
+        | tl(default_conn_opts())
+    ].
 
 default_conn_opts_verify(Config, Ca) ->
     DataDir = ?config(data_dir, Config),

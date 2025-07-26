@@ -327,6 +327,7 @@ extern ERL_NIF_TERM ATOM_NEW_CONN;
 extern ERL_NIF_TERM ATOM_CONNECTED;
 extern ERL_NIF_TERM ATOM_CONN_RESUMED;
 extern ERL_NIF_TERM ATOM_NEW_STREAM;
+extern ERL_NIF_TERM ATOM_PEER_CERT_RECEIVED;
 
 /*----------------------------------------------------------*/
 /* Terms for tracing                                        */

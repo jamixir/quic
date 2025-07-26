@@ -116,17 +116,40 @@ ERL_NIF_TERM parse_conn_event_mask(ErlNifEnv *env,
 
 QUIC_STATUS selected_owner_unreachable(QuicerStreamCTX *s_ctx);
 
+static ERL_NIF_TERM
+cert_to_binary(ErlNifEnv *env, X509 *cert)
+{
+  if (!cert)
+    {
+      return ATOM_ERROR_INTERNAL_ERROR;
+    }
+
+  int len = i2d_X509(cert, NULL);
+  if (len < 0)
+    {
+      return ATOM_ERROR_INTERNAL_ERROR;
+    }
+
+  ERL_NIF_TERM DerCert;
+  unsigned char *data = enif_make_new_binary(env, len, &DerCert);
+  if (!data)
+    {
+      return ATOM_ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+  unsigned char *tmp = data;
+  i2d_X509(cert, &tmp);
+  return DerCert;
+}
+
 ERL_NIF_TERM
 peercert1(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
 {
   CXPLAT_FRE_ASSERT(1 == argc);
   ERL_NIF_TERM ctx = argv[0];
-  ERL_NIF_TERM DerCert;
   ERL_NIF_TERM res = ATOM_UNDEFINED;
   void *q_ctx;
   QuicerConnCTX *c_ctx;
-  int len = 0;
-  unsigned char *tmp;
 
   if (enif_get_resource(env, ctx, ctx_stream_t, &q_ctx))
     {
@@ -155,25 +178,18 @@ peercert1(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
       goto exit;
     }
 
-  if ((len = i2d_X509(c_ctx->peer_cert, NULL)) < 0)
+  ERL_NIF_TERM DerCert = cert_to_binary(env, c_ctx->peer_cert);
+  if (IS_SAME_TERM(DerCert, ATOM_ERROR_INTERNAL_ERROR))
     {
-      // unlikely to happen
       res = ERROR_TUPLE_2(ATOM_ERROR_INTERNAL_ERROR);
       goto exit;
     }
-
-  unsigned char *data = enif_make_new_binary(env, len, &DerCert);
-
-  if (!data)
+  else if (IS_SAME_TERM(DerCert, ATOM_ERROR_NOT_ENOUGH_MEMORY))
     {
       res = ERROR_TUPLE_2(ATOM_ERROR_NOT_ENOUGH_MEMORY);
       goto exit;
     }
 
-  // note, using tmp is mandatory, see doc for i2d_X590
-  tmp = data;
-
-  i2d_X509(c_ctx->peer_cert, &tmp);
   res = SUCCESS(DerCert);
 
 exit:
@@ -1644,6 +1660,30 @@ handle_connection_event_peer_certificate_received(QuicerConnCTX *c_ctx,
       X509_free(c_ctx->peer_cert);
     }
   c_ctx->peer_cert = X509_dup(cert);
+
+  // Send event to connection owner
+  {
+    assert(c_ctx->Connection);
+    ErlNifEnv *env = c_ctx->env;
+    ERL_NIF_TERM DerCert = cert_to_binary(env, cert);
+
+    if (IS_SAME_TERM(DerCert, ATOM_ERROR_INTERNAL_ERROR) || 
+        IS_SAME_TERM(DerCert, ATOM_ERROR_NOT_ENOUGH_MEMORY))
+      {
+        // Send error event instead of certificate
+        ERL_NIF_TERM report = make_event(
+            env, ATOM_PEER_CERT_RECEIVED, enif_make_resource(env, c_ctx), ERROR_TUPLE_2(DerCert));
+        enif_send(NULL, &(c_ctx->owner->Pid), NULL, report);
+      }
+    else
+      {
+        // Success - send the certificate binary
+        ERL_NIF_TERM report = make_event(
+            env, ATOM_PEER_CERT_RECEIVED, enif_make_resource(env, c_ctx), SUCCESS(DerCert));
+        enif_send(NULL, &(c_ctx->owner->Pid), NULL, report);
+      }
+  }
+
 #if defined(QUICER_USE_TRUSTED_STORE)
   X509_STORE_CTX *x509_ctx
       = (X509_STORE_CTX *)Event->PEER_CERTIFICATE_RECEIVED.Chain;

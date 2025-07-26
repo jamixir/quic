@@ -356,6 +356,7 @@ ERL_NIF_TERM ATOM_NEW_CONN;
 ERL_NIF_TERM ATOM_CONNECTED;
 ERL_NIF_TERM ATOM_CONN_RESUMED;
 ERL_NIF_TERM ATOM_NEW_STREAM;
+ERL_NIF_TERM ATOM_PEER_CERT_RECEIVED;
 
 /*----------------------------------------------------------*/
 /* for code insert with SNABBKAFFE   */
@@ -776,6 +777,7 @@ ERL_NIF_TERM ATOM_QUIC_SEND_ECN_CONGESTION_COUNT;
   ATOM(ATOM_CONNECTED, connected);                                            \
   ATOM(ATOM_CONN_RESUMED, connection_resumed);                                \
   ATOM(ATOM_NEW_STREAM, new_stream);                                          \
+  ATOM(ATOM_PEER_CERT_RECEIVED, peer_cert_received);                          \
   ATOM(ATOM_SNABBKAFFE_COLLECTOR, snabbkaffe_collector);                      \
   ATOM(ATOM_TRACE, trace);                                                    \
   ATOM(ATOM_TIME, time);                                                      \

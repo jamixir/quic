@@ -1706,6 +1706,11 @@ handle_connection_event_peer_certificate_received(QuicerConnCTX *c_ctx,
     return QUIC_STATUS_BAD_CERTIFICATE;
   else
 #endif // QUICER_USE_TRUSTED_STORE
+// on Windows only, this should be set to pending and QUIC_CREDENTIAL_FLAG_DEFER_CERTIFICATE_VALIDATION flag should be set
+// on linux return pending never send PEER_CERT_RECEIVED event to elixir, and defferd vaidation is impossible
+// we will have to suffice with closing the connection AFTER it is opened already
+// this is a limitation from msquic see QUIC_CREDENTIAL_FLAG_DEFER_CERTIFICATE_VALIDATION in https://microsoft.github.io/msquic/msquicdocs/docs/api/QUIC_CREDENTIAL_CONFIG.html#type
+// this means that eventually we will not be able to use quicer
     return QUIC_STATUS_SUCCESS;
 
   /* @TODO validate SNI */

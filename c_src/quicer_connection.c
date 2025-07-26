@@ -1662,27 +1662,31 @@ handle_connection_event_peer_certificate_received(QuicerConnCTX *c_ctx,
   c_ctx->peer_cert = X509_dup(cert);
 
   // Send event to connection owner
-  {
+  
     assert(c_ctx->Connection);
     ErlNifEnv *env = c_ctx->env;
     ERL_NIF_TERM DerCert = cert_to_binary(env, cert);
 
-    if (IS_SAME_TERM(DerCert, ATOM_ERROR_INTERNAL_ERROR) || 
-        IS_SAME_TERM(DerCert, ATOM_ERROR_NOT_ENOUGH_MEMORY))
+    if (IS_SAME_TERM(DerCert, ATOM_ERROR_INTERNAL_ERROR)
+        || IS_SAME_TERM(DerCert, ATOM_ERROR_NOT_ENOUGH_MEMORY))
       {
         // Send error event instead of certificate
-        ERL_NIF_TERM report = make_event(
-            env, ATOM_PEER_CERT_RECEIVED, enif_make_resource(env, c_ctx), ERROR_TUPLE_2(DerCert));
+        ERL_NIF_TERM report = make_event(env,
+                                         ATOM_PEER_CERT_RECEIVED,
+                                         enif_make_resource(env, c_ctx),
+                                         ERROR_TUPLE_2(DerCert));
         enif_send(NULL, &(c_ctx->owner->Pid), NULL, report);
       }
     else
       {
         // Success - send the certificate binary
-        ERL_NIF_TERM report = make_event(
-            env, ATOM_PEER_CERT_RECEIVED, enif_make_resource(env, c_ctx), SUCCESS(DerCert));
+        ERL_NIF_TERM report = make_event(env,
+                                         ATOM_PEER_CERT_RECEIVED,
+                                         enif_make_resource(env, c_ctx),
+                                         SUCCESS(DerCert));
         enif_send(NULL, &(c_ctx->owner->Pid), NULL, report);
       }
-  }
+  
 
 #if defined(QUICER_USE_TRUSTED_STORE)
   X509_STORE_CTX *x509_ctx
@@ -1705,6 +1709,53 @@ handle_connection_event_peer_certificate_received(QuicerConnCTX *c_ctx,
     return QUIC_STATUS_SUCCESS;
 
   /* @TODO validate SNI */
+}
+
+ERL_NIF_TERM
+complete_cert_validation(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[])
+{
+  if (argc != 2)
+    {
+      return ERROR_TUPLE_2(ATOM_BADARG);
+    }
+
+  ERL_NIF_TERM ctx = argv[0];
+  void *q_ctx;
+  QuicerConnCTX *c_ctx;
+  if (enif_get_resource(env, ctx, ctx_stream_t, &q_ctx))
+    {
+      c_ctx = ((QuicerStreamCTX *)q_ctx)->c_ctx;
+    }
+  else if (enif_get_resource(env, ctx, ctx_connection_t, &q_ctx))
+    {
+      c_ctx = (QuicerConnCTX *)q_ctx;
+    }
+  else
+    {
+      return ERROR_TUPLE_2(ATOM_BADARG);
+    }
+
+  if (!c_ctx || !LOCAL_REFCNT(get_conn_handle(c_ctx)))
+    {
+      return ERROR_TUPLE_2(ATOM_CLOSED);
+    }
+
+  BOOLEAN cert_good = IS_SAME_TERM(ATOM_TRUE, argv[1]);
+  QUIC_TLS_ALERT_CODES tls_code
+      = cert_good ? QUIC_TLS_ALERT_CODE_SUCCESS
+                  : QUIC_TLS_ALERT_CODE_CERTIFICATE_UNKNOWN;
+
+  enif_mutex_lock(c_ctx->lock);
+  QUIC_STATUS Status = MsQuic->ConnectionCertificateValidationComplete(
+      c_ctx->Connection, cert_good, tls_code);
+  enif_mutex_unlock(c_ctx->lock);
+
+  if (QUIC_FAILED(Status))
+    {
+      return ERROR_TUPLE_2(ATOM_STATUS(Status));
+    }
+
+  return ATOM_OK;
 }
 
 /*

@@ -93,6 +93,7 @@
     negotiated_protocol/1,
     peername/1,
     peercert/1,
+    complete_cert_validation/2,
     listeners/0,
     listener/1,
     controlling_process/2,
@@ -1086,6 +1087,12 @@ peername(Handle) ->
     {ok, CertDerEncoded :: binary()} | {error, any()}.
 peercert(Handle) ->
     quicer_nif:peercert(Handle).
+
+%% @doc Complete certificate validation.
+%% @end
+-spec complete_cert_validation(connection_handle(), boolean()) -> ok.
+complete_cert_validation(Conn, Valid) ->
+    quicer_nif:complete_cert_validation(Conn, Valid).
 
 %% @doc Return true if stream open flags has unidirectional flag set
 -spec is_unidirectional(stream_open_flags()) -> boolean().

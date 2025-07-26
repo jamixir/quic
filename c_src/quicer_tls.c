@@ -110,48 +110,49 @@ parse_verify_options(ErlNifEnv *env,
       *is_verify = verify;
     }
 
-// always indicate that we received a certificate
+  // always indicate that we received a certificate
   CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
 
+  if (is_server) {
+    // 2a) Server: require the client to send a cert
+    CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION;
+  } else {
+    // 2b) Client: skip all OpenSSL validation (no CA available)
+    CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
+  }
 
-  if (is_server)
-    {
-      // require client certificate always => this means both side are required to send a certificate
-      CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION;
-      
-    } 
-
-  if (!verify)
-    {
-      // verify :none or :verify_none => no certificate validation
-      CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
-    }
-  else
-    {
-      // Verify peer is enabled
-      if (!is_server)
-        {
-          ERL_NIF_TERM tmp;
-          if (enif_get_map_value(env, options, ATOM_CACERTFILE, &tmp))
-            {
-#if defined(QUICER_USE_TRUSTED_STORE)
-              // cacertfile is set, use it for self validation.
-              CredConfig->Flags
-                  |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
-#else
-              // cacertfile is set, use it for OpenSSL validation.
-              CredConfig->Flags
-                  |= QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE;
-              CredConfig->CaCertificateFile = str_from_map(
-                  env, ATOM_CACERTFILE, &options, NULL, PATH_MAX + 1);
-#endif // QUICER_USE_TRUSTED_STORE
-              CredConfig->Flags
-                  |= QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
-            }
-          CredConfig->Flags
-              |= QUIC_CREDENTIAL_FLAG_USE_TLS_BUILTIN_CERTIFICATE_VALIDATION;
-        }
-    }
+  //   if (!verify)
+  //     {
+  //       // verify :none or :verify_none => no certificate validation
+  //       CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
+  //     }
+  //   else
+  //     {
+  //       // Verify peer is enabled
+  //       if (!is_server)
+  //         {
+  //           ERL_NIF_TERM tmp;
+  //           if (enif_get_map_value(env, options, ATOM_CACERTFILE, &tmp))
+  //             {
+  // #if defined(QUICER_USE_TRUSTED_STORE)
+  //               // cacertfile is set, use it for self validation.
+  //               CredConfig->Flags
+  //                   |= QUIC_CREDENTIAL_FLAG_NO_CERTIFICATE_VALIDATION;
+  // #else
+  //               // cacertfile is set, use it for OpenSSL validation.
+  //               CredConfig->Flags
+  //                   |= QUIC_CREDENTIAL_FLAG_SET_CA_CERTIFICATE_FILE;
+  //               CredConfig->CaCertificateFile = str_from_map(
+  //                   env, ATOM_CACERTFILE, &options, NULL, PATH_MAX + 1);
+  // #endif // QUICER_USE_TRUSTED_STORE
+  //               CredConfig->Flags
+  //                   |= QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
+  //             }
+  //           CredConfig->Flags
+  //               |=
+  //               QUIC_CREDENTIAL_FLAG_USE_TLS_BUILTIN_CERTIFICATE_VALIDATION;
+  //         }
+  //     }
   return TRUE;
 }
 
@@ -394,7 +395,7 @@ eoptions_to_cred_config(ErlNifEnv *env,
           |= QUIC_CREDENTIAL_FLAG_USE_TLS_BUILTIN_CERTIFICATE_VALIDATION;
 #endif // __APPLE__
 #endif // QUICER_USE_TRUSTED_STORE
-    }  // === END of verify peer with cacertfile === //
+    } // === END of verify peer with cacertfile === //
   else
     { // NO verify peer
 #if !defined(QUICER_USE_TRUSTED_STORE)

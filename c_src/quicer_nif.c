@@ -1767,6 +1767,7 @@ static ErlNifFunc nif_funcs[] = {
   { "setopt", 4, setopt4, 0},
   { "controlling_process", 2, controlling_process, 0},
   { "peercert", 1, peercert1, 0},
+  { "complete_cert_validation", 2, complete_cert_validation, 0},
   { "enable_sig_buffer", 1, enable_sig_buffer, 0},
   { "flush_stream_buffered_sigs", 1, flush_stream_buffered_sigs, 0},
   { "count_reg_conns", 0, count_reg_connsX, 0},

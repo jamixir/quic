@@ -15,79 +15,161 @@ limitations under the License.
 -------------------------------------------------------------------*/
 #include "quicer_tls.h"
 
+static bool
+load_pkcs12_cert(ErlNifEnv *env,
+                 ERL_NIF_TERM opts,
+                 QUIC_CREDENTIAL_CONFIG *config)
+{
+  if (!config)
+    {
+      return false;
+    }
+
+  ERL_NIF_TERM pkcs12_term;
+  ErlNifBinary pkcs12_bin;
+  if (!enif_get_map_value(env, opts, ATOM_PKCS12_BUNDLE, &pkcs12_term))
+    {
+      return false;
+    }
+
+  if (!enif_inspect_binary(env, pkcs12_term, &pkcs12_bin))
+    {
+      return false;
+    }
+
+  QUIC_CERTIFICATE_PKCS12 *mem_cert
+      = CXPLAT_ALLOC_NONPAGED(sizeof(*mem_cert), QUICER_CERTIFICATE_PKCS12);
+  if (!mem_cert)
+    {
+      return false;
+    }
+
+  char *blob_copy
+      = CXPLAT_ALLOC_NONPAGED(pkcs12_bin.size, QUICER_PKCS12_BUNDLE);
+  if (!blob_copy)
+    {
+      CXPLAT_FREE(mem_cert, QUICER_CERTIFICATE_PKCS12);
+      return false;
+    }
+
+  CxPlatCopyMemory(blob_copy, pkcs12_bin.data, pkcs12_bin.size);
+
+  mem_cert->Asn1Blob = (const uint8_t *)blob_copy;
+  mem_cert->Asn1BlobLength = pkcs12_bin.size;
+  mem_cert->PrivateKeyPassword = NULL;
+
+  config->CertificatePkcs12 = mem_cert;
+  config->Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_PKCS12;
+
+  return true;
+}
+
 /*
 ** Build QUIC_CREDENTIAL_CONFIG from options, certfile, keyfile and password
 */
+BOOLEAN
+parse_cert_options_file(ErlNifEnv *env,
+                        ERL_NIF_TERM options,
+                        QUIC_CREDENTIAL_CONFIG *CredConfig)
+{
+  if (!CredConfig)
+    {
+      return false;
+    }
+
+  char *cert_path
+      = str_from_map(env, ATOM_CERTFILE, &options, NULL, PATH_MAX + 1);
+  char *key_path = str_from_map(env, ATOM_KEYFILE, &options, NULL, PATH_MAX + 1);
+  char *pwd = NULL;
+
+  if (!cert_path || !key_path)
+    {
+      goto cleanup;
+    }
+
+  ERL_NIF_TERM pwd_term;
+  if (enif_get_map_value(env, options, ATOM_PASSWORD, &pwd_term))
+    {
+      pwd = str_from_map(env, ATOM_PASSWORD, &options, NULL, 256);
+      if (!pwd)
+        {
+          goto cleanup;
+        }
+
+      QUIC_CERTIFICATE_FILE_PROTECTED *cert
+          = CXPLAT_ALLOC_NONPAGED(sizeof(*cert), QUICER_CERTIFICATE_FILE);
+
+      if (!cert)
+        {
+          goto cleanup;
+        }
+
+      cert->CertificateFile = cert_path;
+      cert->PrivateKeyFile = key_path;
+      cert->PrivateKeyPassword = pwd;
+
+      CredConfig->CertificateFileProtected = cert;
+      CredConfig->Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE_PROTECTED;
+    }
+  else
+    {
+      QUIC_CERTIFICATE_FILE *cert
+          = CXPLAT_ALLOC_NONPAGED(sizeof(*cert), QUICER_CERTIFICATE_FILE);
+
+      if (!cert)
+        {
+          goto cleanup;
+        }
+
+      cert->CertificateFile = cert_path;
+      cert->PrivateKeyFile = key_path;
+
+      CredConfig->CertificateFile = cert;
+      CredConfig->Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
+    }
+
+  return true;
+
+cleanup:
+  free(cert_path);
+  free(key_path);
+  free(pwd);
+  return false;
+}
+
 BOOLEAN
 parse_cert_options(ErlNifEnv *env,
                    ERL_NIF_TERM options,
                    QUIC_CREDENTIAL_CONFIG *CredConfig)
 {
-  char *password = NULL;
-  char *certfile = NULL;
-  char *keyfile = NULL;
-  ERL_NIF_TERM tmp_term;
-
   if (!CredConfig)
     {
-      return FALSE;
+      return false;
     }
 
-  if (!(certfile
-        = str_from_map(env, ATOM_CERTFILE, &options, NULL, PATH_MAX + 1)))
-    {
-      goto error;
-    }
-  if (!(keyfile
-        = str_from_map(env, ATOM_KEYFILE, &options, NULL, PATH_MAX + 1)))
-    {
-      goto error;
-    }
+  char *cert_path
+      = str_from_map(env, ATOM_CERTFILE, &options, NULL, PATH_MAX + 1);
+  char *key_path = str_from_map(env, ATOM_KEYFILE, &options, NULL, PATH_MAX + 1);
 
-  // Get password for Server CertFile
-  if (enif_get_map_value(env, options, ATOM_PASSWORD, &tmp_term))
+  bool ok = false;
+
+  if (cert_path && key_path)
     {
-      if (!(password = str_from_map(env, ATOM_PASSWORD, &options, NULL, 256)))
-        {
-          goto error;
-        }
-
-      QUIC_CERTIFICATE_FILE_PROTECTED *CertFile
-          = (QUIC_CERTIFICATE_FILE_PROTECTED *)CXPLAT_ALLOC_NONPAGED(
-              sizeof(QUIC_CERTIFICATE_FILE_PROTECTED),
-              QUICER_CERTIFICATE_FILE);
-
-      if (!CertFile)
-        {
-          goto error;
-        }
-      CertFile->CertificateFile = certfile;
-      CertFile->PrivateKeyFile = keyfile;
-      CertFile->PrivateKeyPassword = password;
-      CredConfig->CertificateFileProtected = CertFile;
-      CredConfig->Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE_PROTECTED;
+      ok = parse_cert_options_file(env, options, CredConfig);
     }
   else
     {
-      QUIC_CERTIFICATE_FILE *CertFile
-          = (QUIC_CERTIFICATE_FILE *)CXPLAT_ALLOC_NONPAGED(
-              sizeof(QUIC_CERTIFICATE_FILE), QUICER_CERTIFICATE_FILE);
-      if (!CertFile)
+      ERL_NIF_TERM pkcs12_term;
+      if (enif_get_map_value(env, options, ATOM_PKCS12_BUNDLE, &pkcs12_term)
+          && enif_is_binary(env, pkcs12_term))
         {
-          goto error;
+          ok = load_pkcs12_cert(env, options, CredConfig);
         }
-      CertFile->CertificateFile = certfile;
-      CertFile->PrivateKeyFile = keyfile;
-      CredConfig->CertificateFile = CertFile;
-      CredConfig->Type = QUIC_CREDENTIAL_TYPE_CERTIFICATE_FILE;
     }
 
-  return TRUE;
-error:
-  free(certfile);
-  free(keyfile);
-  free(password);
-  return FALSE;
+  free(cert_path);
+  free(key_path);
+  return ok;
 }
 
 /*
@@ -110,16 +192,15 @@ parse_verify_options(ErlNifEnv *env,
       *is_verify = verify;
     }
 
-// always indicate that we received a certificate
+  // always indicate that we received a certificate
   CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_INDICATE_CERTIFICATE_RECEIVED;
-
 
   if (is_server)
     {
-      // require client certificate always => this means both side are required to send a certificate
+      // require client certificate always => this means both side are required
+      // to send a certificate
       CredConfig->Flags |= QUIC_CREDENTIAL_FLAG_REQUIRE_CLIENT_AUTHENTICATION;
-      
-    } 
+    }
 
   if (!verify)
     {

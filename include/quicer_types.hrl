@@ -85,6 +85,7 @@
     certfile := file:filename(),
     key := file:filename(),
     keyfile := file:filename(),
+    pkcs12_bundle := binary(),
     verify => none | peer | verify_peer | verify_none,
     cacertfile => file:filename(),
     password => string(),

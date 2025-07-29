@@ -18,6 +18,14 @@ limitations under the License.
 #include "msquic.h"
 #include "quicer_nif.h"
 
+BOOLEAN parse_cert_options_in_memory(ErlNifEnv *env,
+                                     ERL_NIF_TERM options,
+                                     QUIC_CREDENTIAL_CONFIG *CredConfig);
+
+BOOLEAN parse_cert_options_file(ErlNifEnv *env,
+                                ERL_NIF_TERM options,
+                                QUIC_CREDENTIAL_CONFIG *CredConfig);
+
 BOOLEAN parse_cert_options(ErlNifEnv *env,
                            ERL_NIF_TERM options,
                            QUIC_CREDENTIAL_CONFIG *CredConfig);

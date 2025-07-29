@@ -148,6 +148,7 @@ ERL_NIF_TERM ATOM_CERT;
 ERL_NIF_TERM ATOM_CERTFILE;
 ERL_NIF_TERM ATOM_KEY;
 ERL_NIF_TERM ATOM_KEYFILE;
+ERL_NIF_TERM ATOM_PKCS12_BUNDLE;
 ERL_NIF_TERM ATOM_PASSWORD;
 ERL_NIF_TERM ATOM_ALPN;
 ERL_NIF_TERM ATOM_HANDLE;
@@ -736,6 +737,7 @@ ERL_NIF_TERM ATOM_QUIC_SEND_ECN_CONGESTION_COUNT;
   ATOM(ATOM_CERTFILE, certfile);                                              \
   ATOM(ATOM_KEY, key);                                                        \
   ATOM(ATOM_KEYFILE, keyfile);                                                \
+  ATOM(ATOM_PKCS12_BUNDLE, pkcs12_bundle);                                    \
   ATOM(ATOM_PASSWORD, password);                                              \
   ATOM(ATOM_ALPN, alpn);                                                      \
   ATOM(ATOM_HANDLE, handle);                                                  \
